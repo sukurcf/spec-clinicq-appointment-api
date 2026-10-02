@@ -248,6 +248,14 @@ These are requirements, not DDL.
 | appointments | Dr. Rohan, Asha, starts `2026-10-05T04:30:00Z`, display `2026-10-05T10:00:00+05:30`, status `BOOKED` |
 | appointment_audit_log | `BOOKED` to `CHECKED_IN`, actor `neha.patil@example.in`, UTC change time |
 
+## Local fixture and persistence contract
+
+The samples above are illustrative variants, not the default seeded booking state. Document 06's recorded local fixture maps Rohan `D-100` to UUID `55555555-5555-4555-8555-555555555555` and Asha to patient UUID `22222222-2222-4222-8222-222222222222`. It reserves four free Monday slots from `09:00` to `10:00` IST on the saved `demo_date`, with no Asha upcoming active appointments. The at-least-100 other sample appointments must not occupy those reserved slots.
+
+The first seed records its current IST anchor and next-Monday demo date. Idempotent restart keeps that metadata and all existing IDs/edits; it must not move historical or booked appointments to new dates. Automated tests may use the explicitly restricted test business clock; ordinary local runs use real business time. Factories create isolated state-test variants such as `A-300`, not hidden mutations of the common demo seed.
+
+Persist records in `clinicq_pgdata`, optional queue state in `clinicq_redisdata`, and generated signing configuration/date context in untracked local bind mounts. TC-LOCAL-003 compares appointment IDs/status/fee snapshots, audit counts, token-family state, and signing configuration across stop/start. Preserve privacy: hash/sanitize evidence rather than publishing raw credentials or tokens.
+
 ## Data retention
 
 | Data | Retention rule |
@@ -258,11 +266,13 @@ These are requirements, not DDL.
 | Refresh tokens | Delete or archive expired tokens after 30 days. |
 | Login attempts | Keep at least 30 days for lockout and security review. |
 | Notification outbox | Keep sent rows for at least 30 days in Should scope. |
-| Seed data | May be reset in local development. |
+| Seed data | Reset only through document 06's explicitly confirmed project-local command; never on normal stop/start. |
 
 ## Migration policy
 
 Every schema change MUST use an Alembic migration. Migrations MUST be reversible when practical. Seed data MUST be separate from migrations. The student MUST test migrations on an empty database and on a seeded database. Data migrations that modify appointments or audit rows MUST be described in an ADR or migration note.
+
+The start entry point runs `alembic upgrade head` before `scripts/seed_demo.py --fixture local`. Seed creates missing fictional records only; repeat startup is not permission to overwrite appointments, audit history, refreshed tokens, or saved demo-date metadata.
 
 ## Time handling policy
 

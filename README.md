@@ -1,6 +1,6 @@
 # ClinicQ appointment booking API
 
-A backend-only FastAPI project specification for a Pune clinic appointment booking REST API.
+A Python backend-only FastAPI project specification for a Pune clinic appointment booking REST API. Students use Python tests or an API client; no student-built frontend is allowed, including optional work. This repository contains specifications, not application code.
 
 ## Quick facts
 
@@ -26,13 +26,16 @@ A backend-only FastAPI project specification for a Pune clinic appointment booki
 - RFC 9457 Problem Details errors under `/api/v1`.
 - Audit logs for every appointment status change.
 - One hand-written SQL doctor performance report with revenue rank.
-- A Bruno or Postman API collection for the final demo.
+- A local Bruno/Postman collection or Python HTTP demonstration for the final demo.
+- At least 50 meaningful tests, including clean-clone, offline-fixture, persistence, and dependency-error acceptance.
+
+The required local startup/stop commands, migration/seed contract, loopback ports, and deterministic verification are in [06 Tech stack and setup](docs/06-tech-stack-and-setup.md). Optional Celery/Redis/Mailpit run locally only. No public deployment, paid account, hostname, or external API key is required.
 
 ## Architecture at a glance
 
 ```mermaid
 flowchart TD
-  Client["Bruno or future frontend"] --> API["FastAPI REST API /api/v1"]
+  Client["Python tests or local API client"] --> API["FastAPI REST API /api/v1 on loopback"]
   API --> Auth["Auth and RBAC services"]
   API --> Booking["Booking and appointment services"]
   API --> Reports["Report service with raw SQL"]
@@ -106,3 +109,4 @@ Every Friday, show a 15-minute progress demo to the trainer. Bring one working f
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-02 | First release |
+| 1.1 | 2026-10-02 | Backend/local-only revision: future frontend and public cloud exercises removed. Their effort and points assess Python/SQL/API tests and reproducible local operation; six weeks, business rules, version families, and rubric weights are unchanged. |

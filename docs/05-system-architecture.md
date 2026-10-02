@@ -10,23 +10,25 @@ flowchart LR
   Doctor[Doctor] --> API
   Receptionist[Receptionist] --> API
   Admin[Clinic Admin] --> API
-  Bruno[Bruno or Postman collection] --> API
+  Client[Python tests or local API client] --> API
   API --> DB[(PostgreSQL)]
-  API --> Mailpit[Mailpit SMTP and inbox]
-  API --> Redis[(Redis)]
-  Worker[Celery notification worker] --> Redis
+  API -.-> Mailpit[Optional local Mailpit SMTP and inbox]
+  API -.-> Redis[(Optional local Redis)]
+  Worker[Optional local Celery notification worker] --> Redis
   Worker --> DB
   Worker --> Mailpit
   API --> Logs[JSON logs with request ID]
 ```
 
-ClinicQ is a backend-only appointment booking API. Patients, doctors, receptionists, and admins use future clients or the demo API collection. The API owns authentication, role checks, booking rules, availability generation, and reports. PostgreSQL is the source of truth for users, doctors, schedules, leaves, appointments, audit logs, refresh tokens, login attempts, and notification outbox rows.
+ClinicQ is a backend-only appointment booking API. Patients, doctors, receptionists, and admins use Python HTTP flows or a local API collection, never a student-built interface. The API owns authentication, role checks, booking rules, availability generation, and reports. PostgreSQL is the source of truth for users, doctors, schedules, leaves, appointments, audit logs, refresh tokens, login attempts, and notification outbox rows.
+
+Celery/Redis reminder processing is Should scope. It is disabled in the lite profile and is not required for the booking API.
 
 ## Container diagram
 
 ```mermaid
 flowchart TB
-  Client[API client] -->|HTTPS or local HTTP| FastAPI[FastAPI app]
+  Client[Python tests or API client] -->|Local loopback HTTP| FastAPI[FastAPI app]
   FastAPI --> Auth[Auth and RBAC services]
   FastAPI --> Appointment[Appointment service]
   FastAPI --> Availability[Availability service]
@@ -36,13 +38,15 @@ flowchart TB
   Availability --> Postgres
   Report --> Postgres
   Appointment --> Outbox[Notification outbox table]
-  Outbox --> Worker[Celery 5.6.x worker]
-  Worker --> Redis[(Redis 8.x broker)]
-  Worker --> Mailpit[Mailpit 1.31.x]
-  FastAPI --> OpenAPI[OpenAPI JSON and Swagger UI]
+  Outbox -.-> Worker[Optional local Celery 5.6.x worker]
+  Worker --> Redis[(Optional local Redis 8.x broker)]
+  Worker --> Mailpit[Optional local Mailpit 1.31.x]
+  FastAPI --> OpenAPI[OpenAPI JSON]
 ```
 
 The FastAPI app is layered: routers validate HTTP contracts, services enforce ClinicQ rules, repositories isolate SQLAlchemy queries, and models map PostgreSQL tables. The booking service MUST use database constraints, row locks, or `SERIALIZABLE` isolation with retry; an ADR must record the chosen strategy. The report service MUST use hand-written SQL for the doctor performance report.
+
+Built-in Swagger/Mailpit consoles may be inspected locally for documentation or operations only. Students do not implement or style them, and no runtime acceptance depends on console assets or a public service.
 
 ## Key flow sequences
 
@@ -161,7 +165,11 @@ If SMTP succeeds and the worker crashes before `sent_at` is stored, a retry MAY 
 | Lite 8 GB | API, PostgreSQL, pytest runner | API 512 MB, PostgreSQL 512 MB | Mandatory Must-scope development and grading pre-check. Celery, Redis, Mailpit, and Locust are off. |
 | Standard 16 GB | API, PostgreSQL, Redis, Celery worker, Mailpit, pytest runner, Locust | API 1 GB, PostgreSQL 1 GB, worker 512 MB | Full Must plus Should e-mail and performance testing. |
 
-Docker Compose MUST pin images, including PostgreSQL 18.x, Redis 8.x, and Mailpit 1.31.x. A clean clone MUST start locally through documented `uv` and `docker compose` commands without paid services.
+Docker Compose MUST pin images, including PostgreSQL 18.x and optional local Redis 8.x/Mailpit 1.31.x. Students implement the single start/stop contract in document 06; it initializes migrations, fictional records, and recorded fixtures before health verification. After downloads, cached local startup and runtime tests use no external network.
+
+Host bindings are loopback-only: API `127.0.0.1:8001` to `api:8000`, PostgreSQL `127.0.0.1:25432` to `db:5432`, optional Redis `127.0.0.1:16379`, Mailpit SMTP `127.0.0.1:21025`, and built-in Mailpit console `127.0.0.1:28025`. These do not conflict with CampusHire's documented ports.
+
+Named volume `clinicq_pgdata` preserves appointments, immutable fee snapshots, audit rows, token families, and seed identities. Optional `clinicq_redisdata` retains the local queue, while the PostgreSQL outbox remains authoritative. Generated signing configuration and demo-date metadata remain in untracked local bind-mounted files. Normal stop never deletes these; reset needs explicit confirmation. Resource budgets are proposed limits, not measured results.
 
 ## Expected implementation repository tree
 
@@ -206,12 +214,19 @@ clinicq-api/
     concurrency/
     security/
     performance/
+    local/
   docs/
     adr/
     query-plans/
+    test-reports/
+  fixtures/
+    local-demo/
   bruno/
   scripts/
     seed_demo.py
+    local-start.sh
+    local-stop.sh
+    local-reset.sh
   docker-compose.yml
   docker-compose.lite.yml
   pyproject.toml
@@ -238,7 +253,7 @@ clinicq-api/
 | Availability query and indexes | Which query shape and indexes make availability fast for schedules, leaves, and active appointments, and what does `EXPLAIN ANALYZE` show? |
 | Doctor performance report SQL | Why is the report implemented with hand-written SQL, how are parameters bound, and how is `revenue_rank` calculated with a window function? |
 | Notification worker choice | If Should-scope e-mail is implemented, why are Celery, Redis, Mailpit, outbox rows, and idempotency keys used? |
-| Deployment profile | Which Docker Compose profiles are supported on 8 GB and 16 GB hardware, and which services are disabled in the lite profile? |
-| Optional technology choice | If async SQLAlchemy, Redis availability cache, Valkey, Schemathesis, or cloud deployment is chosen, what trade-off justifies it for ClinicQ? |
+| Local lifecycle and profile | How do the start/stop commands, idempotent migrations/seed, saved demo dates, loopback bindings, offline caches, and persistent volumes work on 8 GB and 16 GB hardware? |
+| Optional technology choice | If async SQLAlchemy, local Redis availability cache, Valkey, or Schemathesis is chosen, what trade-off justifies it for ClinicQ? |
 
 [Back to README](../README.md)

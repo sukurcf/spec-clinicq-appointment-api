@@ -4,7 +4,7 @@ Purpose: This document defines the test approach, coverage gates, concrete test 
 
 ## Test strategy
 
-ClinicQ uses a pyramid with many fast service tests and fewer full-stack tests.
+ClinicQ uses Python unit/service tests and real PostgreSQL/API integration tests. The implementation MUST retain at least 50 meaningful cases, and all Must catalog rows need evidence. The existing catalog exceeds that floor; local lifecycle cases below are additional, not substitutes for concurrency, JWT, privacy, or SQL checks.
 
 | Level | Approximate count | Scope | Tools |
 |---|---:|---|---|
@@ -16,6 +16,7 @@ ClinicQ uses a pyramid with many fast service tests and fewer full-stack tests.
 | Security | 35 | JWT expiry, tampering, lockout, authorization matrix, no password or token leakage | pytest, PyJWT 2.15.x, pip-audit 2.10.x |
 | Performance | 4 | Availability and booking latency targets | Locust 2.46.x |
 | Contract and demo | 10 | OpenAPI shape, Bruno/Postman collection, health endpoints, named query-plan checks | Schemathesis 4.29.x if chosen; named checks: OpenAPI document, availability EXPLAIN ANALYZE, report EXPLAIN ANALYZE |
+| Local lifecycle | 6 | Clean clone, deterministic offline operation, persisted stop/start, clear failures, loopback, explicit reset | Host-side Python/pytest driver |
 
 ## Test tools and versions
 
@@ -48,7 +49,7 @@ ClinicQ uses a pyramid with many fast service tests and fewer full-stack tests.
 | Local unit | No Docker services | Unit and service tests on every edit. |
 | Local lite integration | API test process and PostgreSQL 18.x | Mandatory CI path for Must features on 8 GB hardware. |
 | Local standard integration | API, PostgreSQL, Redis, Celery, Mailpit | Should e-mail tests and full demo rehearsal. |
-| CI | PostgreSQL service container, uv cache, coverage reports | Pull requests and pushes to main. |
+| CI | PostgreSQL, cached uv/images, isolated local test volumes, coverage/JUnit | Pull requests and pushes to main; offline runtime phase after initial downloads. |
 | Performance workstation | Standard 16 GB profile with seeded database | Locust and booking latency evidence. |
 
 ## Test data strategy
@@ -59,6 +60,9 @@ ClinicQ uses a pyramid with many fast service tests and fewer full-stack tests.
 - Freeze time in tests at named instants such as 2026-10-02T10:00:00+05:30.
 - Store Mailpit responses only from local Mailpit, not real e-mail services.
 - Reset database state per test module using migrations plus transaction rollback or clean schema recreation.
+- Recorded local fixture templates and SHA-256 are stored in the student repository; live APIs and real SMTP are not test inputs.
+- Seed anchors demo dates at first initialization and preserves them on restart. The exact local acceptance fixture uses `APP_ENV=test` with document 06's restricted business clock; token/login expiry is not globally frozen.
+- Pre-cache pinned PostgreSQL and Testcontainers helper images. Offline tests may neither pull images nor silently fall back to SQLite.
 
 ## Coverage thresholds
 
@@ -131,7 +135,7 @@ CI MUST fail when line or branch coverage drops below its separate threshold.
 | TC-Q-051 | Readiness fails when database down | API negative | Must | FR-OPS-01 | API process runs and PostgreSQL is stopped. | API client sends GET /api/v1/health/ready with No auth. | No auth. | HTTP 503; type database-not-ready. |
 | TC-Q-052 | Seed creates exact demo counts | Integration positive | Must | FR-OPS-01 | Empty local database after migrations. | Test runner uses Run seed command once. Data: Demo clinic seed. | Demo clinic seed. | Database has exactly 5 doctors, 20 patients, 2 weeks of schedules, and at least 100 appointments. |
 | TC-Q-053 | JSON request log contains request ID | Observability | Must | FR-OPS-01 | API logging captures one health request. | Patient uses GET readiness with DB up. Data: Header X-Request-ID: req-test-53. | Header X-Request-ID: req-test-53. | One JSON log has request_id req-test-53, method GET, path /api/v1/health/ready, status 200, and duration_ms. |
-| TC-Q-054 | Bruno collection covers core flow | Demo | Must | FR-CLIENT-01 | API seeded and collection variables point to local API. | Patient uses Run collection auth, search, availability, booking, conflict, report, health requests. Data: Local collection environment. | Local collection environment. | Collection run passes; conflict request returns HTTP 409 schedule-change-conflicts; no real secrets appear in variables. |
+| TC-Q-054 | Local API demonstration covers core flow | Demo | Must | FR-CLIENT-01; BR-22 | API seeded; selected collection or Python HTTP driver uses `127.0.0.1:8001`. | Run auth, search, availability, booking, state, conflict, report, and health requests. | Generated local credentials and isolated booking fixture. | Exact success assertions pass; schedule conflict returns `409 schedule-change-conflicts`; saved evidence omits raw tokens/secrets. |
 | TC-Q-055 | Patient blocked from admin doctor endpoint | Authorization negative | Must | FR-AUTH-04 | Patient token exists. | Patient sends POST /api/v1/admin/doctors with Valid Rohan-like doctor payload. | Valid Rohan-like doctor payload. | HTTP 403; type permission-denied; doctor table unchanged. |
 | TC-Q-056 | Doctor blocked from patient profile update | Authorization negative | Must | FR-AUTH-04 | Doctor token exists. | Doctor sends PATCH /api/v1/patients/me/profile with full_name Bad Actor. | full_name Bad Actor. | HTTP 403; type permission-denied; no patient profile changes. |
 | TC-Q-057 | Receptionist cannot complete appointment | Authorization negative | Must | FR-AUTH-04 | Appointment is CHECKED_IN. | Receptionist uses Receptionist POSTs complete. Data: Appointment ID 77777777-7777-4777-8777-777777777777. | Appointment ID 77777777-7777-4777-8777-777777777777. | HTTP 403; type permission-denied; status remains CHECKED_IN. |
@@ -173,6 +177,24 @@ CI MUST fail when line or branch coverage drops below its separate threshold.
 | TC-Q-096 | Patient cannot cancel another appointment | Authorization negative | Must | FR-APPT-02 | Vivek owns a BOOKED appointment. | Patient uses Asha sends POST /api/v1/appointments/{vivek_appointment_id}/cancel and observes denial. Data: Vivek appointment ID and reason. | Vivek appointment ID and reason. | HTTP 403; type permission-denied; appointment remains BOOKED. |
 | TC-Q-097 | Patient cannot read audit log | Authorization negative | Must | FR-AUDIT-01 | Appointment audit rows exist. | Patient uses Asha sends GET /api/v1/appointments/77777777-7777-4777-8777-777777777777/audit and observes denial. Data: Asha bearer token. | Asha bearer token. | HTTP 403; type permission-denied; audit rows are not returned. |
 | TC-Q-098 | Receptionist reads audit log | Authorization positive | Must | FR-AUDIT-01 | Appointment audit rows exist. | Receptionist uses Neha sends GET /api/v1/appointments/77777777-7777-4777-8777-777777777777/audit and observes history. Data: Receptionist bearer token. | Receptionist bearer token. | HTTP 200; status history is returned in changed_at order. |
+| TC-Q-099 | Expanded error-contract matrix | API contract | Should | FR-API-02; BR-18 | Selected Should/Could endpoints and error examples exist | Replay documented expired-token, wrong-role, conflict, and invalid-slot requests | Local optional-feature fixtures; slot length `25` | Expected `401/403/409/422` type/status/request-ID contracts pass; no stack traces, tokens, or cross-patient records |
+
+## Required local acceptance cases
+
+Implement these as a host-side Python/pytest driver in `tests/local/`, invoking document 06's canonical entry points and loopback HTTP endpoints. A container that the stop test terminates cannot be the test driver. Use `LOCAL_INSTANCE=clinicq_acceptance` with isolated test volumes/configuration, not the student's normal demo data; stop/reset must never affect an unrelated project.
+
+Before the offline phase, cache locked packages and pinned application/DB/test-helper images. Disable external egress while keeping loopback/Compose networking. Save JUnit plus exact health/availability JSON, sanitized appointment/audit IDs and fee snapshots, and configuration/fixture hashes. Never publish raw tokens or generated signing secrets.
+
+| ID | Title | Type | Priority | Linked requirement IDs | Preconditions | Steps | Test data | Expected result |
+|---|---|---|---|---|---|---|---|---|
+| TC-LOCAL-001 | Clean clone initializes local state | INFRA | Must | FR-OPS-01; BR-19; BR-31; NFR-OPS-01 | Clean implementation clone, cached downloads, empty isolated volumes | Run lite start; GET live/ready; login Asha; run start again | Recorded seed: five doctors, twenty patients, two-week context, at least 100 appointments | Exact ready message and health JSON; login `200 expires_in=900`; second start preserves IDs/counts/context and signing configuration |
+| TC-LOCAL-002 | Deterministic core operation offline | API | Must | Local fixtures FR-OPS-01; slots FR-AVAIL-01; offline runtime NFR-OPS-03 | External egress disabled; local networks retained; fresh acceptance seed with test business clock | Start cached stack; login Asha; GET Rohan availability for `2026-10-05`; run runtime tests | Fixed Rohan UUID, Monday `09:00-10:00`, no leave/bookings in reserved slots | `200`; exact four-slot JSON from document 06; no image pull, external source fetch, SMTP provider, or test skips |
+| TC-LOCAL-003 | Appointment, audit, tokens persist | IT | Must | Restart FR-OPS-01; retained local state BR-31; durability NFR-REL-03 | Seeded Asha has no upcoming appointment; local credentials exist | Book reserved `09:00` slot; capture IDs/fee/audit count and refresh family; stop; start; reauthenticate and inspect | New BOOKED appointment; fee `600.00`; signing-config hash | Same appointment ID/status/start/fee, audit count `1`, and token-family records remain; previous unexpired refresh can rotate; secrets were not regenerated |
+| TC-LOCAL-004 | Invalid payload and DB/port failures are clear | API | Must | Dependency checks FR-OPS-01; Problem Details FR-API-01; clear diagnostics NFR-OPS-04 | Local stack has existing appointment/audit state | Send malformed `starts_at`; stop DB and call live/ready/protected API; restore DB; start with API port occupied | Invalid string `Monday morning`; request ID `req-local-ready` | Payload `422` Problem Details; live `200`; ready/protected call `503 database-not-ready`; occupied-port start nonzero with document 06 diagnostic; no partial writes/deletes |
+| TC-LOCAL-005 | Local services publish only loopback | INFRA | Must | FR-OPS-01; BR-31 | Lite profile running; optional local services tested if selected | Inspect resolved Compose bindings and connection targets | Host ports `8001,25432,16379,21025,28025` | All enabled bindings use `127.0.0.1`, never public interfaces; internal DB `5432`; no Celery host port |
+| TC-LOCAL-006 | Explicit reset stays project-local | INFRA | Must | Reset command FR-OPS-01; project boundary BR-31; retention safety NFR-REL-03 | Disposable acceptance records/config and a separate sentinel volume exist | Reset without flag; verify records; reset with exact confirmation | Acceptance appointment/audit/signing config only | Unconfirmed reset fails with exact confirmation message, retaining records; confirmed reset removes only acceptance data/config; sentinel and other projects survive |
+
+Local trainer pre-check `LOCAL-PRECHECK` is the checklist in document 06. Record actual resource observations and OS; the proposed 8 GB budgets are not claimed test results.
 
 ## Fixture aliases
 
@@ -259,29 +281,29 @@ Allowed means the role can call the route. Owner rules are enforced in addition 
 | FR-APPT-04 | TC-Q-040, TC-Q-041, TC-Q-042 for doctor operations |
 | FR-SEARCH-01, BR-17 | TC-Q-022, TC-Q-023, TC-Q-024 for doctor search |
 | FR-API-01, BR-18 | TC-Q-047, TC-Q-048, TC-Q-049, TC-Q-079 for api standards |
-| FR-OPS-01, BR-19 | TC-Q-050, TC-Q-051, TC-Q-052, TC-Q-053 for health seed logs |
+| FR-OPS-01, BR-19, BR-31 | TC-Q-050, TC-Q-051, TC-Q-052, TC-Q-053 and TC-LOCAL-001 through TC-LOCAL-006 for health, fixtures, local lifecycle, persistence, and failures |
 | FR-AUDIT-01, BR-20 | TC-Q-025, TC-Q-036, TC-Q-041, TC-Q-043, TC-Q-044 for audit history |
 | FR-REPORT-01, BR-21 | TC-Q-045, TC-Q-046, TC-Q-077 for admin report |
-| FR-CLIENT-01, BR-22 | TC-Q-054 for demo collection |
+| FR-CLIENT-01, BR-22 | TC-Q-054 for local API collection or Python HTTP demonstration |
 | FR-NOTIF-01, BR-23 | Demo step: book and cancel appointment, then show one booking e-mail and one cancellation e-mail in Mailpit. for booking mailpit mail |
 | FR-NOTIF-02, BR-24 | TC-Q-065 and TC-Q-078 for reminder worker |
 | FR-DOC-03, BR-25 | Demo step: save 20-minute slot doctor, then reject 25-minute slot length. for variable slot length |
 | FR-PAT-01, BR-26 | Demo step: receptionist creates a walk-in patient with user_id null and books one slot. for walk-in patient |
 | FR-CLIN-01, BR-27 | Demo step: doctor writes visit notes after check-in; patient reads notes after completion. for visit notes |
 | FR-REPORT-02 | Demo step: admin downloads appointments-per-day CSV with header row. for csv extra reports |
-| FR-API-02 | Demo step: configured CORS origin passes preflight and unknown origin is denied. for cors settings |
+| FR-API-02 | TC-Q-099 for expanded local API error contracts |
 | FR-PERF-01, BR-28 | TC-Q-064 for locust target |
 | FR-APPT-05 | Demo step: reschedule changes old and new slots atomically or rolls both back. for atomic reschedule |
 | FR-WAIT-01, BR-29 | Demo step: first waitlisted patient receives notification after cancellation. for waitlist fifo |
 | FR-TECH-01, BR-30 | Demo step: show ADR and test proving cache invalidates on booking or schedule change. for cache or async choice |
 | FR-TEST-01 | Demo step: Schemathesis run covers /api/v1 OpenAPI without undocumented 500 errors. for schemathesis contract |
-| FR-DEPLOY-01, BR-31 | Demo step: cloud notes show cost warning, availability check, and destroy-after-demo step. for cloud disposal |
 | NFR-PERF-01 | TC-Q-062 for locust target |
 | NFR-PERF-02 | TC-Q-064 for should availability latency |
 | NFR-PERF-03 | TC-Q-063 for booking latency |
 | NFR-SCALE-01 | TC-Q-052 for seed scale |
 | NFR-REL-01 | TC-Q-029, TC-Q-030, TC-Q-031 for race safety |
 | NFR-REL-02 | TC-Q-065 and TC-Q-078 for reminder reliability |
+| NFR-REL-03 | TC-LOCAL-003 and TC-LOCAL-006 for persisted data/configuration and confirmed reset |
 | NFR-SEC-01 | TC-Q-001, TC-Q-061 for password secrecy |
 | NFR-SEC-02 | TC-Q-004, TC-Q-007, TC-Q-008, TC-Q-009, TC-Q-059, TC-Q-060, TC-Q-068 for token safety |
 | NFR-SEC-03 | TC-Q-005, TC-Q-006 for lockout security |
@@ -292,9 +314,12 @@ Allowed means the role can call the route. Owner rules are enforced in addition 
 | NFR-MAINT-01 | CI step: Ruff 0.16.x and mypy 2.4.x pass for lint type |
 | NFR-MAINT-02 | Coverage report enforcing 85% line and 75% branch for total coverage |
 | NFR-MAINT-03 | Service coverage report enforcing 95% line and 85% branch on booking, slots, and state machine for service coverage |
+| NFR-MAINT-04 | CI pytest collection/pass summary and catalog mapping: at least 50 meaningful cases, including all Must local cases |
 | NFR-OBS-01 | TC-Q-053, TC-Q-061 for request logs |
-| NFR-OPS-01 | Trainer clean-clone setup check for health seed logs |
-| NFR-OPS-02 | Lite profile startup check on 8 GB settings for lite hardware |
+| NFR-OPS-01 | TC-LOCAL-001 plus trainer OS clean-clone start/stop check |
+| NFR-OPS-02 | LOCAL-PRECHECK from document 06 on 8 GB/four-core hardware |
+| NFR-OPS-03 | TC-LOCAL-002 for deterministic offline fixtures/runtime |
+| NFR-OPS-04 | TC-LOCAL-004 plus TC-Q-047 for dependency and input diagnostics |
 | NFR-LIC-01 | Dependency review of pyproject.toml and image tags for licence compliance |
 | NFR-API-01 | TC-Q-047, TC-Q-048 for api standards |
 
@@ -312,7 +337,7 @@ Allowed means the role can call the route. Owner rules are enforced in addition 
 
 ## Defect report fields
 
-Each bug report MUST include: title, environment, commit SHA, endpoint or service, linked requirement ID, exact test data, steps to reproduce, expected result, actual result, HTTP status and Problem Details body when relevant, logs with request ID, screenshots only for Mailpit or Locust evidence, severity, owner, and fix verification test ID.
+Each bug report MUST include: title, environment, commit SHA, endpoint/service/local command, requirement IDs, fixture hash and saved demo date, reproduction steps, exact expected/actual result, status/Problem Details, sanitized request-ID logs, severity, owner, and fix verification test ID. Use local Mailpit API/outbox or Locust output as operational evidence; no business-interface screenshots are a deliverable.
 
 ## Entry criteria
 
@@ -321,16 +346,19 @@ Each bug report MUST include: title, environment, commit SHA, endpoint or servic
 - .env.example exists and has no secrets.
 - Ruff, mypy, and unit tests pass locally before API integration tests begin.
 - Test factories can create users, doctors, schedules, appointments, and tokens.
+- Locked dependencies and pinned images are cached before offline runtime acceptance; demo and test volumes are isolated.
 
 ## Exit criteria
 
 - All Must-priority tests in this catalog pass.
+- At least 50 meaningful Python cases pass; catalog coverage cannot be replaced by duplicate assertions.
 - Coverage gates pass separately for line and branch thresholds.
 - Same-slot concurrency gives exactly 1 HTTP 201 and 9 HTTP 409.
 - Patient parallel booking limit gives at most 3 successful bookings.
 - Readiness, logs, Problem Details, and authorization matrix tests pass.
 - OpenAPI document check, availability EXPLAIN ANALYZE, and report EXPLAIN ANALYZE evidence are named and stored.
 - Performance evidence meets Must targets; Should Locust evidence is present if FR-PERF-01 is claimed.
-- Bruno or Postman demo collection completes without real secrets or real personal data.
+- The local API collection or Python HTTP demonstration completes without publishing raw tokens, credentials, or real personal data.
+- TC-LOCAL-001 through TC-LOCAL-006 pass with health/availability JSON, persisted appointment/audit/fee/token evidence, loopback bindings, and safe reset.
 
 [Back to README](../README.md)

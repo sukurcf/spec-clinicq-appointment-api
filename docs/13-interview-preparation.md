@@ -8,8 +8,8 @@ Purpose: This document helps a student explain ClinicQ in interviews and connect
 |---|---|
 | Situation | A Pune clinic used phone and paper booking. Staff had double bookings, long queues, and poor no-show visibility. |
 | Task | I built a FastAPI REST API for appointment booking with JWT auth, PostgreSQL rules, and role-based workflows. |
-| Action | I implemented doctor schedules, availability, concurrency-safe booking, appointment states, audit logs, and a SQL report. I used tests, Docker Compose, CI, and a Bruno collection. |
-| Result | The system prevents duplicate active slots, limits each patient to 3 upcoming appointments, reports doctor revenue, and starts from a clean clone. |
+| Action | I implemented schedules, availability, concurrency-safe booking, appointment states, audit, and a SQL report. I used Python/API tests, local Compose, CI, recorded fixtures, and persisted start/stop checks. |
+| Result | The backend prevents duplicate active slots, limits patients to 3 upcoming appointments, reports booking-time revenue, and verifies clean-clone/offline/persistence behavior. |
 
 ## Interview questions by topic
 
@@ -32,7 +32,7 @@ Purpose: This document helps a student explain ClinicQ in interviews and connect
    - Stable `type` values support tests.
    - Field errors can be nested.
 5. Why version the API as `/api/v1`?
-   - Future clients can migrate safely.
+   - API consumers can migrate safely.
    - Breaking changes get a new prefix.
    - OpenAPI stays clear.
 
@@ -138,10 +138,12 @@ Purpose: This document helps a student explain ClinicQ in interviews and connect
    - Ruff, mypy, pytest, coverage.
    - Docker build.
    - pip-audit, Trivy, Gitleaks.
+   - At least 50 meaningful cases and offline/persistence/local-error acceptance.
 28. Why use Docker Compose?
    - One command starts local services.
-   - API, PostgreSQL, Mailpit, Redis fit demos.
+   - API/PostgreSQL are mandatory; local Mailpit/Redis/Celery are optional.
    - Profiles support 8 GB laptops.
+   - Named volumes and retained signing configuration preserve data across stop/start.
 29. What should not be logged?
    - Passwords.
    - Raw refresh tokens.
@@ -185,6 +187,11 @@ Purpose: This document helps a student explain ClinicQ in interviews and connect
    - State chosen strategy.
    - Explain retry or lock behavior.
    - Describe test evidence.
+9. How do you prove local independence?
+   - Cache locked packages and pinned images first.
+   - Use recorded fictional fixtures with external egress disabled.
+   - Assert exact availability JSON and compare appointment/audit/fee/token state across stop/start.
+   - Keep the host pytest driver alive while containers stop; reset only isolated data with explicit confirmation.
 
 ## Fundamentals check
 
@@ -222,9 +229,11 @@ Purpose: This document helps a student explain ClinicQ in interviews and connect
 - Explain DNS, TCP, port, host, and URL.
 - Explain 200, 201, 401, 403, 409, 422, 429, and 503.
 - Explain request headers and JSON body.
-- Explain CORS for a future frontend.
+- Explain loopback host binding, container networking, and clear `503 database-not-ready` errors.
 
 ### Local tools mapped to AWS services
+
+These are interview concepts only, not provisioning, deployment, paid-account, or portfolio build tasks. Every implementation deliverable runs locally.
 
 | Local tool | AWS concept to mention |
 |---|---|
@@ -241,13 +250,13 @@ Purpose: This document helps a student explain ClinicQ in interviews and connect
 - Prevented double booking with `<strategy>` and tests where 10 parallel same-slot requests produced 1 success and 9 conflicts.
 - Designed PostgreSQL schema with active-only uniqueness, audit logs, and EXPLAIN ANALYZE-backed indexes for availability and revenue reports.
 - Containerized API, PostgreSQL, Mailpit, Redis, and Celery with Docker Compose profiles for 8 GB and 16 GB laptops.
-- Created a Bruno API collection and CI pipeline with Ruff, mypy, pytest, coverage, pip-audit, Trivy, and Gitleaks.
+- Created a local API collection or Python HTTP demo and CI with Ruff, mypy, pytest, coverage, security scans, and offline/persistence acceptance.
 
 ## GitHub and LinkedIn tips
 
 - Pin the `clinicq-api` repository on GitHub.
 - Keep README setup steps short and tested.
-- Link the final demo video and screenshots of CI, coverage, and Bruno runs.
+- Link the final demo video, CI/coverage/JUnit, sanitized API examples, and persisted local-state evidence.
 - Write a LinkedIn post about one hard problem: double booking or refresh token reuse.
 - Do not claim production healthcare compliance. Say it is a local learning project.
 
@@ -259,7 +268,7 @@ Purpose: This document helps a student explain ClinicQ in interviews and connect
 - Show one SQL query plan and one index decision.
 - Answer the difference between 401, 403, 409, and 422.
 - Explain every line of one appointment service function.
-- Run the demo collection from a clean local stack.
+- Run the selected local API demonstration from a clean stack, then explain offline fixtures and persisted stop/start.
 - State one improvement you would make with more time.
 
 [Back to README](../README.md)

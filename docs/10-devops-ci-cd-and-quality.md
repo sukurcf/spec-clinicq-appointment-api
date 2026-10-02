@@ -44,19 +44,20 @@ Every commit SHOULD reference the issue in the body, for example `Refs #12`.
 - Must FR IDs are named when applicable.
 - Tests cover success, negative, and authorization paths.
 - Booking changes include race-condition tests.
-- API changes update OpenAPI examples or the Bruno collection.
+- API changes update OpenAPI examples and the selected local collection or Python HTTP demonstration.
 - Database changes include an Alembic migration.
 - New indexes have EXPLAIN ANALYZE notes when they affect availability or reports.
 - No raw password, token, or Authorization header is logged.
 - `uv.lock` is updated when dependencies change.
 - The PR description mentions significant AI help, if used.
+- Local-operation changes include fixture, offline, persistence, and actionable-error evidence from document 09.
 
 ## Branch protection
 
 | Rule | Requirement |
 |---|---|
 | Protected branch | `main` |
-| Required checks | lint, type check, tests with coverage, Docker build, security scans |
+| Required checks | lint, type check, tests/coverage, Docker build, security scans, local lifecycle |
 | Direct push | Not allowed |
 | Required PR | Yes |
 | Stale approval | Dismiss when new commits arrive |
@@ -69,7 +70,7 @@ Every commit SHOULD reference the issue in the body, for example `Refs #12`.
 |---|---|
 | Ruff | Lint and format application, tests, and scripts. |
 | mypy | Check application packages with `disallow_untyped_defs` and `no_implicit_optional`. |
-| pytest | Run unit, API, integration, concurrency, security, and report tests. |
+| pytest | Run at least 50 meaningful cases, all Must catalog rows, and unit/API/database/concurrency/security/report/local tests. |
 | pytest-cov | Fail below 85% total line or 75% total branch coverage. |
 | targeted coverage | Booking, slot generation, and state machine are at least 95% line and 85% branch coverage. |
 | pre-commit | Run Ruff, mypy, whitespace, end-of-file, and Gitleaks hooks. |
@@ -84,12 +85,15 @@ Every commit SHOULD reference the issue in the body, for example `Refs #12`.
 | Lint | PR and push to `main` | Install locked dependencies and run Ruff check plus format check. | Fails on lint or format differences. |
 | Type check | PR and push to `main` | Run mypy on application packages. | Fails on type errors. |
 | Unit tests | PR and push to `main` | Run fast service tests for auth, booking rules, slots, and state machine. | Fails on any failing test. |
-| API and integration tests | PR and push to `main` | Start PostgreSQL test container, run migrations, and test endpoints. | Fails on broken endpoints or migrations. |
+| API and integration tests | PR and push to `main` | Start PostgreSQL, migrate, load recorded fictional fixtures, and test endpoints plus the Python core-flow smoke. | Fails on broken endpoints/migrations or fewer than 50 meaningful cases. |
 | Concurrency tests | PR and push to `main` | Run same-slot and patient-limit parallel booking tests. | Fails unless expected 201 and 409 counts match. |
 | Coverage | PR and push to `main` | Combine test coverage reports and enforce each scope separately. | Fails below total 85% line, total 75% branch, service 95% line, service 85% branch, auth 90% line, auth 80% branch, report 85% line, or report 75% branch. |
 | Docker build | PR and push to `main` | Build the API image with pinned base image. | Fails if image cannot build. |
 | Security scan | PR and push to `main` | Run pip-audit, Trivy, and Gitleaks. | Fails on configured vulnerability or secret findings. |
-| Collection smoke | Push to `main` and before demo | Start local stack and run critical Bruno requests. | Fails if auth, search, availability, booking, health, or report smoke fails. |
+| API smoke | PR and push to `main` and before demo | Use Python HTTP assertions for auth, search, availability, booking, conflict, report, and health; the local client collection is an alternative demo artifact. | Fails on any core contract mismatch; no client build toolchain is required. |
+| Local lifecycle | PR and push to `main` | Cache prerequisites, then run host-side TC-LOCAL-001 through TC-LOCAL-006 with external egress disabled and isolated acceptance data. | Fails on startup, exact fixture/health mismatch, persistence loss, unclear errors, non-loopback bindings, or unsafe reset; save JUnit/config-hash evidence. |
+
+Hosted CI and initial dependency/image/security-database downloads need internet. Local startup must not depend on GitHub or a registry; runtime acceptance follows downloads and uses only loopback/Compose networking. Online security scanning is separate from the offline runtime phase. No public-cloud deployment job or frontend build exists.
 
 ## Docker and Compose requirements
 
@@ -103,6 +107,8 @@ Every commit SHOULD reference the issue in the body, for example `Refs #12`.
 | Test runner | Must | Runs pytest against isolated test database. |
 
 Compose MUST support a lite profile. The lite profile starts API and PostgreSQL only.
+
+Students MUST implement document 06's start/stop entry points, automatic migration plus non-destructive seed initialization, fixed loopback ports, and explicit-confirmation reset. API host port is `8001`, PostgreSQL `25432`, optional Redis `16379`, optional Mailpit SMTP `21025`, and its built-in console `28025`. Named volumes/configuration survive stop/start; only the selected project's confirmed reset deletes them. API/worker images and test-helper images must already be cached for offline runs.
 
 ## Environment variables
 
@@ -122,18 +128,21 @@ Compose MUST support a lite profile. The lite profile starts API and PostgreSQL 
 | `MAIL_SMTP_HOST` | `mailpit` | Mailpit SMTP host. | No |
 | `MAIL_SMTP_PORT` | `1025` | Mailpit SMTP port. | No |
 | `REDIS_URL` | `redis://redis:6379/0` | Celery broker in Should scope. | No |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Should-scope browser access. | No |
+| `LOCAL_INSTANCE` | `clinicq` | Select project-scoped volumes/config; acceptance uses a disposable isolated instance. | No |
+| `TEST_BUSINESS_NOW` | `2026-10-02T10:00:00+05:30` | Business clock override only with `APP_ENV=test`; ordinary local runs reject it. | No |
 | `LOG_LEVEL` | `INFO` | JSON log verbosity. | No |
 | `REQUEST_ID_HEADER` | `X-Request-ID` | Correlation ID header. | No |
 
 The student repository MUST include `.env.example` with placeholder values only.
+
+The start entry point generates untracked local signing/DB secrets once and retains them on restart. JWT/refresh expiry and lockout use real time except explicit auth-test clocks. Saved local demo dates anchor at first seed and do not shift existing appointments on restart.
 
 ## Versioning and release
 
 - Use SemVer for student releases.
 - Tag the final demo as `v1.0.0`.
 - Maintain a CHANGELOG in the student repository.
-- Record ADRs for transaction strategy, token strategy, raw SQL report, e-mail worker, and deployment choice.
+- Record ADRs for transaction strategy, token strategy, raw SQL report, optional local e-mail worker, and local lifecycle/persistence.
 - Never tag a release when CI is red.
 
 ## Dependency management
@@ -156,10 +165,11 @@ A ClinicQ task is done only when all applicable items are true.
 - Tests prove positive, negative, and authorization behavior.
 - Booking changes pass concurrency tests.
 - Migrations run on empty and seeded databases.
-- OpenAPI and the API collection match the endpoint behavior.
+- OpenAPI and the selected API collection/Python HTTP demo match endpoint behavior.
 - Logs include request ID and omit secrets.
 - CI is green on the branch.
 - The PR checklist is complete.
 - The student can explain the change during Friday demo.
+- Applicable offline-fixture, persisted stop/start, loopback, dependency-error, and reset cases pass with sanitized evidence.
 
 [Back to README](../README.md)

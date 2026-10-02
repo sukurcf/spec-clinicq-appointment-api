@@ -21,23 +21,22 @@ Purpose: This document defines ClinicQ functions, business rules, state machines
 | FR-APPT-04 | Doctor appointment actions | Must | Doctor | BR-14 |
 | FR-SEARCH-01 | Doctor search | Must | Patient, Doctor, Receptionist, Admin | BR-17 |
 | FR-API-01 | API standards and errors | Must | All roles | BR-18 |
-| FR-OPS-01 | Health, migrations, seed, and logs | Must | Public health, Student | BR-19 |
+| FR-OPS-01 | Health, migrations, fixtures, logs, and local lifecycle | Must | Public health, Student | BR-19, BR-31 |
 | FR-AUDIT-01 | Appointment audit log | Must | System, Receptionist, Admin | BR-20 |
 | FR-REPORT-01 | Doctor performance report | Must | Admin | BR-21 |
-| FR-CLIENT-01 | Demo API collection | Must | Admin, Student | BR-22 |
+| FR-CLIENT-01 | Local API collection or Python HTTP demonstration | Must | Admin, Student | BR-22 |
 | FR-NOTIF-01 | Booking and cancellation e-mail | Should | Patient, Worker | BR-23 |
 | FR-NOTIF-02 | Reminder e-mail | Should | Patient, Worker | BR-24 |
 | FR-DOC-03 | Variable slot length | Should | Admin | BR-25 |
 | FR-PAT-01 | Walk-in patients | Should | Receptionist | BR-26 |
 | FR-CLIN-01 | Notes and prescriptions | Should | Doctor, Patient | BR-27 |
 | FR-REPORT-02 | Extra reports and CSV export | Should | Admin | BR-21 |
-| FR-API-02 | CORS configuration | Should | Admin | BR-18 |
+| FR-API-02 | Expanded API error-contract regressions | Should | Student | BR-18 |
 | FR-PERF-01 | Locust load target | Should | Student | BR-28 |
 | FR-APPT-05 | Atomic reschedule | Could | Patient, Receptionist, Admin | BR-10, BR-14 |
 | FR-WAIT-01 | Waitlist | Could | Patient, Worker | BR-29 |
 | FR-TECH-01 | Async SQLAlchemy or Redis cache | Could | Student | BR-30 |
 | FR-TEST-01 | Schemathesis contract tests | Could | Student | BR-18 |
-| FR-DEPLOY-01 | Free cloud demo | Could | Student | BR-31 |
 
 ## Must functional requirements
 
@@ -226,17 +225,21 @@ Acceptance criteria:
 - Given an appointment response, when `starts_at` is shown, then the timestamp is ISO 8601 and includes `+05:30` for display fields.
 - Given an unknown route outside `/api/v1`, when it is requested, then the API returns HTTP 404 with type `not-found`.
 
-### FR-OPS-01 — Health, migrations, seed, and logs
+### FR-OPS-01 — Health, migrations, fixtures, logs, and local lifecycle
 
-Description: ClinicQ MUST expose liveness and readiness endpoints under `/api/v1/health`. Readiness MUST be public and check database connectivity. The project MUST use Alembic migrations and a seed command. Logs MUST be structured JSON and include a request ID.
+Description: ClinicQ MUST expose public liveness/readiness under `/api/v1/health`, use Alembic migrations and an idempotent fictional seed command, and emit structured JSON logs with request IDs. The student MUST implement document 06's single local start/stop and explicitly confirmed reset. After initial downloads, local API operations and runtime tests MUST use cached dependencies/images and recorded fixtures, not external services.
 
-Priority: Must. Roles: Public liveness and readiness, Student. Linked BRs: BR-19.
+Priority: Must. Roles: Public liveness and readiness, Student. Linked BRs: BR-19, BR-31.
 
 Acceptance criteria:
 
 - Given the API process is running, when `/api/v1/health/live` is requested, then the API returns HTTP 200 without a database query.
 - Given the database is unavailable, when `/api/v1/health/ready` is requested, then the API returns HTTP 503 with type `database-not-ready`.
 - Given the seed command runs in local/dev, then it creates 5 doctors, 20 patients, and 2 weeks of schedules.
+- Given a clean implementation clone and empty local volumes, when the start entry point runs after dependency downloads, then migrations, seed records, and both exact health responses are available on loopback.
+- Given recorded local fixtures and external egress disabled, when a Python test requests fresh seeded Rohan availability for the saved demo date, then the API returns exactly four 15-minute slots from `09:00` through `09:45` IST.
+- Given an appointment, audit history, and refresh-token family exist, when local stop then start runs, then the same IDs, states, audit count, token records, and signing configuration remain.
+- Given invalid input, unavailable PostgreSQL, or an occupied API port, when the applicable API/start command runs, then it gives the documented Problem Details or nonzero startup diagnostic without partial writes or data deletion.
 
 ### FR-AUDIT-01 — Appointment audit log
 
@@ -264,35 +267,34 @@ Acceptance criteria:
 - Given `to_date` is before `from_date`, when admin requests the report, then the API returns HTTP 422 with type `invalid-date-range`.
 - Given the report query is finalized, then the student stores EXPLAIN ANALYZE evidence in the student repository documentation.
 
-### FR-CLIENT-01 — Demo API collection
+### FR-CLIENT-01 — Local API collection or Python HTTP demonstration
 
-Description: The student MUST provide a Bruno or Postman collection for the demo. It MUST cover auth, search, availability, booking, state changes, admin schedule conflict, report, and health. The collection MUST use local environment variables.
+Description: The student MUST provide either a local Bruno/Postman collection or a Python HTTP demonstration with assertions. It MUST cover auth, search, availability, booking, state changes, admin schedule conflict, report, and health. Use local environment variables and generated credentials; no interface implementation is allowed.
 
 Priority: Must. Roles: Student, Admin. Linked BRs: BR-22.
 
 Acceptance criteria:
 
-- Given a clean local run with seed data, when the collection runs, then auth, doctor search, availability, and one booking request succeed.
-- Given the admin schedule conflict request in the collection, when it runs against seeded conflicting data, then it shows HTTP 409 with type `schedule-change-conflicts`.
-- Given collection variables are inspected, then no real secret or real personal data is present.
+- Given a clean seeded local run, when the selected API demonstration runs, then auth, search, availability, and one booking request succeed with exact status/body assertions.
+- Given the demonstration's admin schedule-conflict request, when it runs against its isolated booking fixture, then the API returns HTTP 409 with type `schedule-change-conflicts`.
+- Given demo variables and saved response evidence are inspected, then they contain no committed credentials, raw tokens, or real personal data.
 
 ## Should and Could functional requirements
 
 | ID | Requirement | Acceptance criteria |
 |---|---|---|
-| FR-NOTIF-01 | Send e-mail on booking and cancellation through Mailpit. | Booking returns 201 and one e-mail is visible in Mailpit with appointment ID; cancellation creates one cancellation e-mail. |
-| FR-NOTIF-02 | Send reminder e-mail 24 hours before start through Celery and Redis. | One reminder outbox row exists per appointment, retries skip sent rows, and ambiguous SMTP sends may duplicate e-mail. |
+| FR-NOTIF-01 | Send local e-mail on booking and cancellation through Mailpit. | Booking returns 201 and one e-mail is captured by local Mailpit with appointment ID; cancellation creates one cancellation e-mail. |
+| FR-NOTIF-02 | Send local reminder e-mail 24 hours before start through Celery and Redis. | One reminder outbox row exists per appointment, retries skip sent rows, and ambiguous SMTP sends may duplicate e-mail. |
 | FR-DOC-03 | Allow doctor slot length 10, 15, 20, or 30 minutes. | Admin saves 20 minutes successfully; 25 minutes returns HTTP 422 with `invalid-slot-length`. |
 | FR-PAT-01 | Allow receptionist to create walk-in patient records without login. | Walk-in has no user account and can be booked by receptionist. |
 | FR-CLIN-01 | Allow doctor notes and prescription text. | Doctor writes notes after check-in; patient can read own notes after completion. |
 | FR-REPORT-02 | Add appointments per doctor per day, no-show rate, and CSV export. | Admin downloads CSV with header row and date-range filters. |
-| FR-API-02 | Add environment-driven CORS settings. | Allowed origin succeeds in browser preflight; unknown origin is denied. |
+| FR-API-02 | Add parameterized error-contract regressions and OpenAPI examples for selected Should/Could endpoints. | Documented 401/403/409/422 errors retain type/status/request ID; no stack trace, raw token, or other patient's data appears. |
 | FR-PERF-01 | Run Locust availability load test. | p95 is below 300 ms at 50 concurrent users with seed data. |
 | FR-APPT-05 | Reschedule as one atomic operation. | Old slot is freed and new slot is booked in one transaction, or neither change occurs. |
 | FR-WAIT-01 | Add waitlist for a full slot. | First waitlisted patient is notified when a slot is cancelled. |
 | FR-TECH-01 | Use async SQLAlchemy or Redis availability cache. | ADR explains choice and invalidation or transaction behavior. |
 | FR-TEST-01 | Add Schemathesis contract testing. | Contract run covers documented `/api/v1` endpoints and fails on undocumented 500 errors. |
-| FR-DEPLOY-01 | Deploy to a free cloud tier. | Demo notes include cost warning, availability check, and destroy-after-demo step. |
 
 ## Business rules
 
@@ -316,10 +318,10 @@ Acceptance criteria:
 | BR-16 | No-show timing is strict. | Receptionist marks `NO_SHOW` at least 15 minutes after start. | FR-APPT-01, FR-APPT-03 |
 | BR-17 | Search paging has a maximum. | `limit` maximum 100; offset is 0 or more. | FR-SEARCH-01 |
 | BR-18 | API format is stable. | `/api/v1`, RFC 9457, ISO 8601 timestamps. | FR-API-01, FR-API-02, FR-TEST-01 |
-| BR-19 | Operations endpoints are local-demo ready. | Liveness 200 without DB; readiness checks DB; seed creates 5 doctors, 20 patients, 2 weeks schedules. | FR-OPS-01 |
+| BR-19 | Operations endpoints and fictional fixtures are local-demo ready. | Liveness 200 without DB; readiness checks DB; seed creates 5 doctors, 20 patients, 2 weeks schedules, and at least 100 appointments without occupying the reserved demo slots. | FR-OPS-01 |
 | BR-20 | Status changes are audited. | Who, when, from, to, reason, appointment ID. | FR-AUDIT-01 |
 | BR-21 | Admin report uses SQL depth. | Inclusive IST date range, counts by status, revenue from booking-time fee for completed appointments, rank by revenue. | FR-REPORT-01, FR-REPORT-02 |
-| BR-22 | Demo collection covers critical flows. | Auth, search, availability, booking, state changes, conflict, report, health. | FR-CLIENT-01 |
+| BR-22 | The selected local API demonstration covers critical flows. | API collection or Python HTTP assertions for auth, search, availability, booking, state changes, conflict, report, health. | FR-CLIENT-01 |
 | BR-23 | Booking and cancellation e-mail are at-least-once. | Mailpit locally; no exactly-once claim. | FR-NOTIF-01 |
 | BR-24 | Reminders use an outbox key. | 24 hours before appointment; one outbox row per appointment; delivery is at-least-once; duplicate e-mail is possible after ambiguous SMTP success. | FR-NOTIF-02 |
 | BR-25 | Variable slot length values are limited. | 10, 15, 20, or 30 minutes. | FR-DOC-03 |
@@ -328,7 +330,7 @@ Acceptance criteria:
 | BR-28 | Should performance target is defined. | Availability p95 below 300 ms at 50 concurrent users. | FR-PERF-01 |
 | BR-29 | Waitlist notification order is FIFO. | First waitlisted patient is notified first. | FR-WAIT-01 |
 | BR-30 | Cache invalidation must be safe. | Booking, cancellation, schedule, and leave changes invalidate availability cache. | FR-TECH-01 |
-| BR-31 | Cloud demo must be disposable. | Free tier only; cost warning; destroy after demo. | FR-DEPLOY-01 |
+| BR-31 | Local lifecycle is loopback-only, persistent, and offline after downloads. | Fixed ports/named volumes in document 06; stop preserves data and secrets; seed never overwrites edits on restart; reset requires `--confirm-delete-local-data`. | FR-OPS-01 |
 
 ## Appointment state machine
 
@@ -397,5 +399,6 @@ stateDiagram-v2
 | Report `to_date` before `from_date` | Report validation returns status 422 with `invalid-date-range`. | End date must not be before start date. |
 | Inactive specialization at doctor creation | Doctor creation returns status 422 with `specialization-not-active`. | Select an active specialization. |
 | Readiness database check fails | Readiness returns status 503 with `database-not-ready`. | Database is not ready. |
+| PostgreSQL fails during an API operation | Operation returns 503 Problem Details type `database-not-ready`; appointment/audit transaction rolls back. | The local PostgreSQL service is unavailable. |
 
 [Back to README](../README.md)

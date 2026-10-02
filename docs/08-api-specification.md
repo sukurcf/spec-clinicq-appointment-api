@@ -5,13 +5,15 @@ Purpose: This document defines the ClinicQ REST API contract for the `clinicq-ap
 ## API-wide rules
 
 - Base path: `/api/v1`.
-- Format: JSON request and response bodies except OpenAPI HTML and JSON.
+- Local base URL: `http://127.0.0.1:8001/api/v1`; API clients or Python HTTP tests are the business demonstration tools.
+- Format: JSON request/response bodies and OpenAPI JSON; selected Should reports may return CSV. Built-in `/docs` is optional local documentation inspection, not student-built interface work.
 - Authentication: protected endpoints require `Authorization: Bearer <access_token>`.
 - Access token lifetime: 15 minutes. Refresh token lifetime: 7 days.
 - Stored timestamps: UTC. Display timestamps in appointment and availability responses use ISO 8601 with Asia/Kolkata offset, for example `2026-10-05T10:00:00+05:30`.
 - Versioning: all product endpoints are under `/api/v1`. Breaking changes require `/api/v2`; additive fields may be added to `/api/v1`.
 - Pagination: list endpoints use `limit` and `offset`. Default `limit` is 20, maximum is 100, and `offset` defaults to 0.
 - Sorting: doctor search supports `name_asc`, `fee_asc`, `fee_desc`, and `next_available_asc`. Appointment lists sort by `starts_at` ascending for upcoming and descending for past unless a route states otherwise.
+- If PostgreSQL is unavailable during a protected operation, return `503` Problem Details type `database-not-ready` without driver exceptions or partial appointment/audit writes.
 
 ## Endpoint summary
 
@@ -514,6 +516,8 @@ Get availability outcomes: `200`, `404` type `doctor-not-active`, `422` type `bo
 
 Slot starts are generated from the session start in 15-minute steps. A slot is returned only when its end is no later than the session end. The date window includes starts strictly after now and no later than now plus 30 days.
 
+For local acceptance, use document 06's fresh recorded fixture and saved `demo_date`, not the illustrative slots above. Its expected response has exactly four slots from `09:00` through `09:45` IST, fixed doctor UUID, timezone, and 15-minute length. With the restricted automated-test clock, date `2026-10-05` and the full JSON in document 06 are exact assertions. External network access is disabled during that operation.
+
 ## Appointments
 
 ### Book appointment
@@ -820,6 +824,8 @@ Response `200`:
 
 Liveness outcomes: `200`.
 
+Clients may send `X-Request-ID: req-local-live` for deterministic evidence; the liveness body echoes that request ID and has `status=live`. It must remain `200` when PostgreSQL is stopped.
+
 ### Readiness
 
 GET /api/v1/health/ready
@@ -834,9 +840,23 @@ Response `200`:
 
 Readiness outcomes: `200`, `503` type `database-not-ready`.
 
+For `X-Request-ID: req-local-ready` with PostgreSQL unavailable, the exact failure contract is:
+
+```json
+{
+  "type": "database-not-ready",
+  "title": "Database not ready",
+  "status": 503,
+  "detail": "The local PostgreSQL service is unavailable.",
+  "instance": "/api/v1/health/ready",
+  "errors": [],
+  "request_id": "req-local-ready"
+}
+```
+
 ### OpenAPI
 
-`GET /api/v1/openapi.json` returns the generated OpenAPI document. `GET /docs` shows Swagger UI in local/dev.
+`GET /api/v1/openapi.json` returns the generated OpenAPI document and is the required machine-readable contract. `GET /docs` is the built-in Swagger documentation console in local/dev only; students do not implement or style it. No offline acceptance depends on documentation-console assets or hosted API-client synchronization.
 
 OpenAPI outcomes: `200`.
 

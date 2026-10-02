@@ -16,9 +16,9 @@ Purpose: This document defines ClinicQ users, permissions, journeys, and stories
 
 | Persona | Role | Goals | Pain points | Technical comfort |
 |---|---|---|---|---|
-| Asha Kulkarni | Patient | Book a General Medicine visit after work and cancel early if plans change. | Phone lines are busy and paper bookings are unclear. | Comfortable with mobile apps. |
-| Dr. Rohan Mehta | Doctor | See checked-in patients and close completed visits quickly. | Walk-ins and no-shows make the paper queue unreliable. | Comfortable with a simple web dashboard. |
-| Neha Patil | Receptionist | Find a free slot while a patient is on the phone. | Conflict reasons are not written on paper slips. | Comfortable with search forms and filters. |
+| Asha Kulkarni | Patient | Book a General Medicine visit after work and cancel early if plans change. | Phone lines are busy and paper bookings are unclear. | Can send authenticated API requests. |
+| Dr. Rohan Mehta | Doctor | Read checked-in patients and close completed visits quickly. | Walk-ins and no-shows make the paper queue unreliable. | Can inspect own schedule JSON. |
+| Neha Patil | Receptionist | Find a free slot while a patient is on the phone. | Conflict reasons are not written on paper slips. | Can use search/availability query parameters. |
 | Iqbal Shaikh | Admin | Change schedules and review doctor revenue. | Schedule changes can silently break appointments. | Comfortable with reports and CSV files. |
 
 ## Permission matrix
@@ -62,8 +62,8 @@ The Notification Worker may read due reminders and e-mail templates in Should sc
 ```mermaid
 flowchart TD
   A["Asha logs in"] --> B["Search doctors by specialization"]
-  B --> C["Open available slots for 2026-10-05 IST"]
-  C --> D["Select 10:00 IST slot"]
+  B --> C["GET availability for fixture date in IST"]
+  C --> D["Choose a returned future slot from JSON"]
   D --> E["POST booking request"]
   E --> F["Receive appointment ID and BOOKED status"]
 ```
@@ -72,7 +72,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  A["Neha opens all-doctor day schedule"] --> B["Patient arrives before start"]
+  A["Neha GETs all-doctor schedule with bearer token"] --> B["Patient arrives before start"]
   B --> C["Receptionist marks CHECKED_IN"]
   C --> D["Dr. Rohan sees checked-in patient"]
   D --> E["Doctor marks COMPLETED"]
@@ -105,13 +105,15 @@ flowchart TD
 | US-11 | As a receptionist, I want to check in or mark no-show, so that the day queue is accurate. | FR-APPT-01, FR-APPT-03 |
 | US-12 | As a doctor, I want to view my day schedule and complete appointments, so that visit status is correct. | FR-APPT-01, FR-APPT-04 |
 | US-13 | As any user, I want doctor search with filters and pagination, so that result pages are fast and predictable. | FR-SEARCH-01 |
-| US-14 | As a frontend developer, I want one error format and ISO timestamps, so that client code is simple. | FR-API-01 |
-| US-15 | As an operator, I want health checks, migrations, seed data, and request logs, so that the API is demo-ready. | FR-OPS-01 |
+| US-14 | As an API consumer, I want one error format and ISO timestamps, so that Python/API requests are predictable. | FR-API-01 |
+| US-15 | As an operator, I want one start/stop contract, health checks, migrations, fictional fixtures, offline verification, and preserved data, so that the API is reproducible locally. | FR-OPS-01 |
 | US-16 | As an auditor, I want every status change recorded, so that appointment disputes can be traced. | FR-AUDIT-01 |
 | US-17 | As an admin, I want doctor performance reports, so that I can compare revenue and no-shows. | FR-REPORT-01 |
-| US-18 | As a student demoing the project, I want an API collection, so that I can show all important flows. | FR-CLIENT-01 |
+| US-18 | As a student demoing the project, I want a local API collection or Python HTTP demonstration, so that I can show all important flows without an interface project. | FR-CLIENT-01 |
 | US-19 | As a patient, I want booking and cancellation e-mails, so that I have a record outside the app. | FR-NOTIF-01 |
 | US-20 | As a patient, I want a reminder 24 hours before the visit, so that I do not miss the appointment. | FR-NOTIF-02 |
-| US-21 | As an admin, I want optional advanced features after Must scope, so that I can improve the portfolio safely. | FR-DOC-03, FR-PAT-01, FR-CLIN-01, FR-REPORT-02, FR-API-02, FR-PERF-01, FR-APPT-05, FR-WAIT-01, FR-TECH-01, FR-TEST-01, FR-DEPLOY-01 |
+| US-21 | As an admin, I want optional backend features after Must scope, so that I can improve the portfolio safely. | FR-DOC-03, FR-PAT-01, FR-CLIN-01, FR-REPORT-02, FR-API-02, FR-PERF-01, FR-APPT-05, FR-WAIT-01, FR-TECH-01, FR-TEST-01 |
+
+All journeys are API integration flows. The optional Notification Worker, Redis, Celery, and Mailpit operate locally; no role requires a student-built interface or public deployment.
 
 [Back to README](../README.md)
