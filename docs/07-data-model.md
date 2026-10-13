@@ -1,281 +1,44 @@
 # Data model
 
-Purpose: This document defines the logical ClinicQ data model, relationships, constraints, indexes, enumerations, samples, retention, and migration policy.
+## Source contract
 
-## Entity overview
+`orders.csv` is UTF-8, has one header row, and contains at most 500 data rows. The exact header order is `order_id,customer_id,order_date,amount`.
 
-ClinicQ stores users, patients, doctors, specializations, weekly sessions, leaves, appointments, audit log entries, refresh tokens, and login attempts. The model MUST support UTC storage, Asia/Kolkata display, active-only appointment uniqueness, refresh token rotation, lockout, and report queries.
-
-## Tables and columns
-
-### users
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Stable user ID for login and audit. |
-| email | string | Required and unique for login accounts | Lowercase e-mail address. |
-| password_hash | string | Required | Argon2 or bcrypt hash. |
-| role | enum | Required | `PATIENT`, `DOCTOR`, `RECEPTIONIST`, or `ADMIN`. |
-| is_active | boolean | Required, default true | False blocks login and token use. |
-| locked_until | timestamp | Nullable, UTC | End of lockout window after failed logins. |
-| created_at | timestamp | Required, UTC | Account creation time. |
-| updated_at | timestamp | Required, UTC | Last account update time. |
-
-### patients
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Patient profile ID. |
-| user_id | uuid | Optional unique reference to users | Null only for Should-scope walk-in patients. |
-| full_name | string | Required | Fictional patient display name. |
-| phone | string | Required | Indian 10-digit phone number for booking calls. |
-| date_of_birth | date | Optional | Used only if student chooses to collect it. |
-| created_at | timestamp | Required, UTC | Profile creation time. |
-| updated_at | timestamp | Required, UTC | Last profile update time. |
-
-### specializations
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Specialization ID. |
-| name | string | Required and unique case-insensitive | Example: General Medicine. |
-| active | boolean | Required, default true | Inactive values are hidden from new doctor setup. |
-| created_at | timestamp | Required, UTC | Creation time. |
-
-### doctors
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Doctor profile ID. |
-| user_id | uuid | Optional unique reference to users | Login account for the doctor. |
-| specialization_id | uuid | Required reference to specializations | Search and reporting facet. |
-| full_name | string | Required | Doctor display name. |
-| consultation_fee_inr | decimal | Required, greater than or equal to 0 | Current consultation fee for new bookings. |
-| slot_length_minutes | int | Required, MUST be 15 in Must scope | Should values can be 10, 15, 20, or 30. |
-| active | boolean | Required, default true | Inactive doctors are excluded from new bookings. |
-| created_at | timestamp | Required, UTC | Creation time. |
-| updated_at | timestamp | Required, UTC | Last update time. |
-
-### doctor_weekly_sessions
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Weekly session ID. |
-| doctor_id | uuid | Required reference to doctors | Doctor who works this session. |
-| weekday | enum | Required | Monday through Sunday. |
-| session_number | int | Required, 1 or 2 | Allows up to 2 sessions per weekday. |
-| starts_at_local | time | Required | Local Asia/Kolkata start time. |
-| ends_at_local | time | Required, after start | Local Asia/Kolkata end time. |
-| active | boolean | Required, default true | Inactive sessions are ignored. |
-| created_at | timestamp | Required, UTC | Creation time. |
-| updated_at | timestamp | Required, UTC | Last update time. |
-
-### doctor_leaves
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Leave or holiday ID. |
-| doctor_id | uuid | Required reference to doctors | Doctor unavailable during leave. |
-| starts_at | timestamp | Required, UTC | Leave start instant. |
-| ends_at | timestamp | Required, UTC and after start | Leave end instant. |
-| reason | string | Required | Example: conference or clinic holiday. |
-| created_by_user_id | uuid | Required reference to users | Admin who created the leave. |
-| created_at | timestamp | Required, UTC | Creation time. |
-
-### appointments
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Appointment ID returned to clients. |
-| doctor_id | uuid | Required reference to doctors | Doctor for the visit. |
-| patient_id | uuid | Required reference to patients | Patient for the visit. |
-| booked_by_user_id | uuid | Required reference to users | Patient, receptionist, or admin actor. |
-| starts_at | timestamp | Required, UTC | Slot start instant. |
-| ends_at | timestamp | Required, UTC and after start | Slot end instant. |
-| local_date | date | Required, Asia/Kolkata | Date used for patient-doctor-date rule. |
-| fee_at_booking_inr | decimal | Required, greater than or equal to 0 | Immutable doctor fee copied when the appointment is booked. |
-| status | enum | Required | Appointment state. |
-| cancellation_reason | string | Nullable | Required when status becomes `CANCELLED`. |
-| no_show_reason | string | Nullable | Required when status becomes `NO_SHOW`. |
-| created_at | timestamp | Required, UTC | Booking time. |
-| updated_at | timestamp | Required, UTC | Last status or metadata update. |
-
-### appointment_audit_log
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Audit row ID. |
-| appointment_id | uuid | Required reference to appointments | Changed appointment. |
-| actor_user_id | uuid | Required reference to users | User who caused the change. |
-| from_status | enum | Nullable for booking creation | Previous status. |
-| to_status | enum | Required | New status. |
-| reason | string | Nullable | Cancellation, no-show, or operational reason. |
-| changed_at | timestamp | Required, UTC | Time of status change. |
-| request_id | string | Required | Request ID from logs. |
-
-### refresh_tokens
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Refresh token record ID. |
-| user_id | uuid | Required reference to users | Token owner. |
-| token_hash | string | Required and unique | Hash of raw refresh token. |
-| family_id | uuid | Required | Token family for reuse detection. |
-| issued_at | timestamp | Required, UTC | Issue time. |
-| expires_at | timestamp | Required, UTC | 7 days after issue. |
-| rotated_at | timestamp | Nullable, UTC | Set when token is exchanged. |
-| revoked_at | timestamp | Nullable, UTC | Set on logout or family revocation. |
-| revoke_reason | string | Nullable | Example: logout or reuse detected. |
-
-### login_attempts
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Attempt row ID. |
-| email | string | Required | Lowercase e-mail used for login. |
-| user_id | uuid | Nullable reference to users | Null if e-mail does not exist. |
-| success | boolean | Required | True only for successful login. |
-| attempted_at | timestamp | Required, UTC | Attempt time. |
-| ip_address | string | Optional | Client IP for audit and throttling review. |
-| user_agent | string | Optional | User agent string. |
-
-### notification_outbox (Should)
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Outbox item ID. |
-| appointment_id | uuid | Required reference to appointments | Appointment for e-mail. |
-| event_type | enum | Required | `BOOKING_EMAIL`, `CANCELLATION_EMAIL`, or `REMINDER_EMAIL`. |
-| idempotency_key | string | Required and unique | Allows one reminder outbox row for each appointment and skips sent rows. |
-| due_at | timestamp | Required, UTC | Earliest send time. |
-| sent_at | timestamp | Nullable, UTC | Send completion time. |
-| attempt_count | int | Required, default 0 | Retry count. |
-
-### consultation_notes (Should)
-
-| Column | Logical type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | Primary identifier | Note ID. |
-| appointment_id | uuid | Required unique reference to appointments | One note set per appointment. |
-| doctor_user_id | uuid | Required reference to users | Authoring doctor. |
-| note_text | string | Optional | Short consultation note. |
-| prescription_text | string | Optional | Short prescription text. |
-| created_at | timestamp | Required, UTC | Creation time. |
-| updated_at | timestamp | Required, UTC | Last update time. |
-
-## Relationships
-
-```mermaid
-erDiagram
-  USERS ||--o| PATIENTS : owns
-  USERS ||--o| DOCTORS : owns
-  SPECIALIZATIONS ||--o{ DOCTORS : classifies
-  DOCTORS ||--o{ DOCTOR_WEEKLY_SESSIONS : works
-  DOCTORS ||--o{ DOCTOR_LEAVES : takes
-  DOCTORS ||--o{ APPOINTMENTS : receives
-  PATIENTS ||--o{ APPOINTMENTS : books
-  USERS ||--o{ APPOINTMENTS : creates
-  APPOINTMENTS ||--o{ APPOINTMENT_AUDIT_LOG : records
-  USERS ||--o{ APPOINTMENT_AUDIT_LOG : acts
-  USERS ||--o{ REFRESH_TOKENS : owns
-  USERS ||--o{ LOGIN_ATTEMPTS : attempts
-  APPOINTMENTS ||--o{ NOTIFICATION_OUTBOX : emits
-  APPOINTMENTS ||--o| CONSULTATION_NOTES : has
-```
-
-## Required constraints
-
-| Requirement | Tables | Rule |
+| Column | Source rule | Target type |
 |---|---|---|
-| Unique login e-mail | users | E-mail MUST be unique case-insensitively for login accounts. |
-| Patient account link | patients | `user_id` MUST be unique when present. |
-| Doctor account link | doctors | `user_id` MUST be unique when present. |
-| Session count | doctor_weekly_sessions | One doctor can have only session numbers 1 and 2 per weekday. |
-| Valid session time | doctor_weekly_sessions | `ends_at_local` MUST be after `starts_at_local`. |
-| Valid leave time | doctor_leaves | `ends_at` MUST be after `starts_at`. |
-| Valid appointment time | appointments | `ends_at` MUST be after `starts_at`. |
-| Active-only slot uniqueness | appointments | For statuses `BOOKED` and `CHECKED_IN`, one doctor can have only one appointment at a start time. Cancelled and terminal statuses do not block reuse. |
-| Patient-doctor-date limit | appointments | For active statuses, one patient can have only one appointment with the same doctor on one Asia/Kolkata date. |
-| Upcoming patient limit | appointments | Service and transaction logic MUST enforce at most 3 upcoming active appointments per patient. |
-| Refresh token secrecy | refresh_tokens | Store only token hash, never raw token. |
-| Refresh reuse detection | refresh_tokens | A token with `rotated_at` or `revoked_at` MUST NOT be accepted. |
-| Audit immutability | appointment_audit_log | Normal API endpoints MUST NOT update or delete audit rows. |
-| Notification idempotency | notification_outbox | `idempotency_key` MUST be unique; reminder rows use one stable key per appointment. |
+| `order_id` | Trimmed, non-empty, case-sensitive stable key | `text` primary key |
+| `customer_id` | Trimmed, non-empty fictional identifier | `text`, not null |
+| `order_date` | Real date formatted `YYYY-MM-DD` | `date`, not null |
+| `amount` | Finite, non-negative decimal; at most two fractional digits; fits `numeric(12,2)` | `numeric(12,2)`, not null, check `>= 0` |
 
-## Required indexes
+## Target grain
 
-These are requirements, not DDL.
+The `orders` table has one row per distinct `order_id`. Its columns are `order_id`, `customer_id`, `order_date`, and `amount`; `order_id` is the primary key. A repeated key from another run updates that row only when one of its other values changed. No separate customer table is needed.
 
-| Index purpose | Table | Columns or expression | Reason |
-|---|---|---|---|
-| Login lookup | users | Lowercase e-mail | Fast login and uniqueness. |
-| Patient profile lookup | patients | user_id | Resolve own appointments. |
-| Doctor active search | doctors | active, specialization_id, lowercase full name | Search by role and filters. |
-| Weekly schedule lookup | doctor_weekly_sessions | doctor_id, weekday, active | Availability generation. |
-| Leave overlap lookup | doctor_leaves | doctor_id, starts_at, ends_at | Remove blocked slots. |
-| Active slot uniqueness | appointments | doctor_id, starts_at where status is active | Prevent double booking. |
-| Patient daily doctor limit | appointments | patient_id, doctor_id, local_date where status is active | Enforce one active appointment per doctor per date. |
-| Patient upcoming active count | appointments | patient_id, starts_at where status is active | Enforce maximum 3 upcoming appointments. |
-| Doctor day schedule | appointments | doctor_id, starts_at | Doctor and receptionist schedules. |
-| Report date range | appointments | starts_at, doctor_id, status, fee_at_booking_inr | Doctor performance report revenue and counts. |
-| Audit history | appointment_audit_log | appointment_id, changed_at | Appointment timeline. |
-| Refresh token hash | refresh_tokens | token_hash | Refresh lookup. |
-| Refresh family | refresh_tokens | family_id | Revoke token family on reuse. |
-| Login lockout window | login_attempts | email, attempted_at | Count recent failures. |
+## Quarantine contract
 
-## Enumerations
+The local quarantine CSV contains the four original source columns plus `reason`. Preserve the rejected source values. Allowed reason codes are `missing_order_id`, `missing_customer_id`, `invalid_order_date`, `invalid_amount`, and `duplicate_order_id`. For a row with several field errors, store only the first code in the field order shown above. A duplicate reason is assigned only after field validation succeeds.
 
-| Enum | Values |
+## Deterministic fixture
+
+| Source rows | Fictional values | Result |
+|---|---|---|
+| 1–18 | `O-1001` through `O-1018`; `C-2001` through `C-2018`; date `2026-10-01`; amount `10.00` | 18 accepted |
+| 19 | `O-1019,C-2019,2026-02-30,10.00` | Rejected: `invalid_order_date` |
+| 20 | `O-1020,C-2020,2026-10-13,-1.00` | Rejected: `invalid_amount` |
+
+With an empty target, the result is 18 target rows. On an unchanged replay, it remains 18 rows. The source count excludes the header.
+
+## Count definitions
+
+| Count | Meaning |
 |---|---|
-| Role | `PATIENT`, `DOCTOR`, `RECEPTIONIST`, `ADMIN` |
-| Appointment status | `BOOKED`, `CHECKED_IN`, `COMPLETED`, `CANCELLED`, `NO_SHOW` |
-| Active appointment status | `BOOKED`, `CHECKED_IN` |
-| Weekday | `MONDAY`, `TUESDAY`, `WEDNESDAY`, `THURSDAY`, `FRIDAY`, `SATURDAY`, `SUNDAY` |
-| Sort option | `name_asc`, `fee_asc`, `fee_desc`, `next_available_asc` |
-| Notification event | `BOOKING_EMAIL`, `CANCELLATION_EMAIL`, `REMINDER_EMAIL` |
-| Problem type | `slot-already-booked`, `booking-limit-reached`, `patient-doctor-date-limit-reached`, `schedule-change-conflicts`, `refresh-token-reused`, `refresh-token-revoked` |
+| `source` | All data rows read, including invalid and duplicate rows |
+| `accepted` | Valid first occurrences after within-file duplicate handling |
+| `rejected` | Invalid rows plus later valid duplicate rows |
+| `inserted` | Accepted keys absent from the target before the transaction |
+| `already_present` | Accepted keys present before the transaction, including changed payloads updated by upsert |
 
-## Sample data
-
-| Table | Example row |
-|---|---|
-| users | `asha.kulkarni@example.in`, role `PATIENT`, active true |
-| patients | `Asha Kulkarni`, phone `9876543210`, linked to Asha user |
-| specializations | `General Medicine`, active true |
-| doctors | `Dr. Rohan Mehta`, `General Medicine`, fee `600.00`, slot length `15` |
-| doctor_weekly_sessions | Monday session 1, `09:00` to `13:00` IST |
-| doctor_weekly_sessions | Monday session 2, `17:00` to `20:00` IST |
-| appointments | Dr. Rohan, Asha, starts `2026-10-05T04:30:00Z`, display `2026-10-05T10:00:00+05:30`, status `BOOKED` |
-| appointment_audit_log | `BOOKED` to `CHECKED_IN`, actor `neha.patil@example.in`, UTC change time |
-
-## Local fixture and persistence contract
-
-The samples above are illustrative variants, not the default seeded booking state. Document 06's recorded local fixture maps Rohan `D-100` to UUID `55555555-5555-4555-8555-555555555555` and Asha to patient UUID `22222222-2222-4222-8222-222222222222`. It reserves four free Monday slots from `09:00` to `10:00` IST on the saved `demo_date`, with no Asha upcoming active appointments. The at-least-100 other sample appointments must not occupy those reserved slots.
-
-The first seed records its current IST anchor and next-Monday demo date. Idempotent restart keeps that metadata and all existing IDs/edits; it must not move historical or booked appointments to new dates. Automated tests may use the explicitly restricted test business clock; ordinary local runs use real business time. Factories create isolated state-test variants such as `A-300`, not hidden mutations of the common demo seed.
-
-Persist records in `clinicq_pgdata`, optional queue state in `clinicq_redisdata`, and generated signing configuration/date context in untracked local bind mounts. TC-LOCAL-003 compares appointment IDs/status/fee snapshots, audit counts, token-family state, and signing configuration across stop/start. Preserve privacy: hash/sanitize evidence rather than publishing raw credentials or tokens.
-
-## Data retention
-
-| Data | Retention rule |
-|---|---|
-| Users, patients, doctors | Keep for project lifetime unless local reset is requested. |
-| Appointments | Keep for project lifetime to support past appointments and reports. |
-| Appointment audit log | Keep for project lifetime and do not edit through normal API endpoints. |
-| Refresh tokens | Delete or archive expired tokens after 30 days. |
-| Login attempts | Keep at least 30 days for lockout and security review. |
-| Notification outbox | Keep sent rows for at least 30 days in Should scope. |
-| Seed data | Reset only through document 06's explicitly confirmed project-local command; never on normal stop/start. |
-
-## Migration policy
-
-Every schema change MUST use an Alembic migration. Migrations MUST be reversible when practical. Seed data MUST be separate from migrations. The student MUST test migrations on an empty database and on a seeded database. Data migrations that modify appointments or audit rows MUST be described in an ADR or migration note.
-
-The start entry point runs `alembic upgrade head` before `scripts/seed_demo.py --fixture local`. Seed creates missing fictional records only; repeat startup is not permission to overwrite appointments, audit history, refreshed tokens, or saved demo-date metadata.
-
-## Time handling policy
-
-All persisted timestamps MUST be UTC. API responses MAY include UTC fields and display fields with Asia/Kolkata offsets. Booking limits that depend on the calendar date MUST use the Asia/Kolkata local date. Slot generation MUST convert weekly local sessions to UTC instants before comparing leaves and appointments.
+For a successful file, `source = accepted + rejected` and `accepted = inserted + already_present`.
 
 [Back to README](../README.md)

@@ -1,112 +1,78 @@
-# ClinicQ appointment booking API
+# LoadLite — local CSV-to-PostgreSQL loader
 
-A Python backend-only FastAPI project specification for a Pune clinic appointment booking REST API. Students use Python tests or an API client; no student-built frontend is allowed, including optional work. This repository contains specifications, not application code.
+LoadLite is a small command-line batch loader for entry-level data engineers. In **five days × six hours/day = 30 hours**, build a Python tool that validates one fictional CSV file, quarantines bad rows with reasons, and loads valid orders into one local PostgreSQL table.
 
 ## Quick facts
 
 | Item | Value |
 |---|---|
-| Track | Web Development — Backend API |
-| Difficulty | ★★★☆☆ Intermediate |
-| Duration | 6 weeks, about 180 hours |
-| Target job roles | Python Backend Developer, API Developer, Software Engineer (Backend) |
-| Key skills | FastAPI, REST, JWT, PostgreSQL, SQLAlchemy, transactions, Docker, CI, testing |
-| Prerequisites | Basic Python, basic SQL, Git basics, willingness to learn HTTP |
-| Minimum hardware | 8 GB RAM laptop using the lite profile |
-| Student repository name | `clinicq-api` |
+| Track | Entry-level data engineering |
+| Audience | Freshers with basic Python, SQL, and Git |
+| Duration | Exactly 5 days × 6 hours/day = 30 hours |
+| Input | One `orders.csv`, at most 500 data rows |
+| Stable key | `order_id` |
+| Interface | One Python CLI |
+| Runtime services | One local PostgreSQL 18 database |
+| Fixture | 20 fictional rows: 18 accepted, 2 rejected |
+| Required tests | 20 concrete cases; 80% line and 70% branch coverage for `loadlite` |
 
-## What you will build
+## Required outcome
 
-- Patient registration, login, refresh token rotation, logout, and login lockout.
-- Admin-managed doctors, specializations, fees, weekly sessions, leaves, and holidays.
-- Availability lookup that subtracts leaves, active appointments, and past times.
-- Patient and receptionist booking with concurrency-safe business rules.
-- Appointment state flow for `BOOKED`, `CHECKED_IN`, `COMPLETED`, `CANCELLED`, and `NO_SHOW`.
-- Doctor search with filters, pagination, and sorting.
-- RFC 9457 Problem Details errors under `/api/v1`.
-- Audit logs for every appointment status change.
-- One hand-written SQL doctor performance report with revenue rank.
-- A local Bruno/Postman collection or Python HTTP demonstration for the final demo.
-- At least 50 meaningful tests, including clean-clone, offline-fixture, persistence, and dependency-error acceptance.
+- Validate `order_id`, `customer_id`, ISO `order_date`, and non-negative decimal `amount`.
+- Write invalid rows to a quarantine CSV with a stable reason code.
+- Keep the first valid source row for each `order_id`; quarantine later valid duplicates.
+- Load all accepted rows in one transaction. A changed payload for an existing key updates that order; an unchanged file rerun creates no rows.
+- Print exactly five JSON counts: `source`, `accepted`, `rejected`, `inserted`, and `already_present`.
 
-The required local startup/stop commands, migration/seed contract, loopback ports, and deterministic verification are in [06 Tech stack and setup](docs/06-tech-stack-and-setup.md). Optional Celery/Redis/Mailpit run locally only. No public deployment, paid account, hostname, or external API key is required.
+First load of the fixture:
 
-## Architecture at a glance
-
-```mermaid
-flowchart TD
-  Client["Python tests or local API client"] --> API["FastAPI REST API /api/v1 on loopback"]
-  API --> Auth["Auth and RBAC services"]
-  API --> Booking["Booking and appointment services"]
-  API --> Reports["Report service with raw SQL"]
-  Auth --> DB[("PostgreSQL 18")]
-  Booking --> DB
-  Reports --> DB
-  API --> Logs["JSON logs with request ID"]
-  Booking --> Mailpit["Mailpit e-mail sandbox"]
-  Worker["Celery worker Should"] --> Redis[("Redis Should")]
-  Worker --> DB
-  Worker --> Mailpit
+```json
+{"source":20,"accepted":18,"rejected":2,"inserted":18,"already_present":0}
 ```
 
-## How to read this specification
+On the same-file rerun, `inserted` is `0`, `already_present` is `18`, and the target still has **18 rows**.
 
-Read the documents in order for the first pass. Then keep `03-functional-requirements.md`, `08-api-specification.md`, and `09-testing-strategy-and-test-cases.md` open while coding.
+## Local demo
 
-MUST means mandatory for grading. SHOULD means recommended after Must scope is stable. MAY means optional. IDs connect stories, requirements, rules, tests, and demo evidence. Examples: `US-07`, `FR-BOOK-02`, `BR-13`, and `NFR-REL-01`.
+After the one-time setup in [06 Tech stack and setup](docs/06-tech-stack-and-setup.md), start PostgreSQL, confirm its health check, and run:
 
-## Document index
+```bash
+uv run --env-file .env.local --offline loadlite run fixtures/orders.csv --format json --quarantine .local/quarantine/orders-rejected.csv
+```
+
+The database is published only at `127.0.0.1:25432`. Stop and restart preserve its named volume. Runtime needs no external connection after the first dependency and image downloads.
+
+## Scope
+
+The deliverable is a local Python CSV-to-PostgreSQL loader with a deterministic fixture, useful tests, and reproducible local operations. It does not require any other runtime service, hosted resource, external data source, scheduler, queue, or visualization. The specification repository contains Markdown only; students implement the loader in their own repository.
+
+## Read the specification
 
 | Document | Purpose |
 |---|---|
-| [01 Project overview](docs/01-project-overview.md) | Problem, scope, constraints, goals, and job relevance. |
-| [02 Users and roles](docs/02-users-and-roles.md) | Roles, personas, permissions, journeys, and user stories. |
-| [03 Functional requirements](docs/03-functional-requirements.md) | FRs, acceptance criteria, business rules, validations, and state machine. |
-| [04 Non-functional requirements](docs/04-non-functional-requirements.md) | Performance, security, privacy, reliability, observability, and portability. |
-| [05 System architecture](docs/05-system-architecture.md) | Architecture diagrams, flows, deployment view, repository tree, and ADR list. |
-| [06 Tech stack and setup](docs/06-tech-stack-and-setup.md) | Tools, versions, local setup, hardware profiles, and learning order. |
-| [07 Data model](docs/07-data-model.md) | Logical tables, constraints, indexes, samples, and migration policy. |
-| [08 API specification](docs/08-api-specification.md) | Endpoint contracts, examples, status codes, errors, pagination, and versioning. |
-| [09 Testing strategy and test cases](docs/09-testing-strategy-and-test-cases.md) | Test plan, coverage thresholds, test catalog, traceability, and performance tests. |
-| [10 DevOps CI/CD and quality](docs/10-devops-ci-cd-and-quality.md) | Git workflow, CI jobs, Docker, secrets, releases, and Definition of Done. |
-| [11 Milestones and deliverables](docs/11-milestones-and-deliverables.md) | Six-week plan, effort budget, checklist, submission, and demo script. |
-| [12 Evaluation rubric](docs/12-evaluation-rubric.md) | Mandatory gates, scoring, bonus, deductions, grade bands, and viva questions. |
-| [13 Interview preparation](docs/13-interview-preparation.md) | STAR pitch, interview questions, deep dives, resume bullets, and fundamentals. |
-| [14 Glossary and resources](docs/14-glossary-and-resources.md) | Term definitions, official links, free resources, and reading order. |
+| [01 Project overview](docs/01-project-overview.md) | Problem, outcome, scope, and job skills |
+| [02 Users and roles](docs/02-users-and-roles.md) | Two roles and three user stories |
+| [03 Functional requirements](docs/03-functional-requirements.md) | Five Must requirements and data rules |
+| [04 Non-functional requirements](docs/04-non-functional-requirements.md) | Performance, reliability, security, and hardware |
+| [05 System architecture](docs/05-system-architecture.md) | One architecture diagram and data flow |
+| [06 Tech stack and setup](docs/06-tech-stack-and-setup.md) | Versions, local commands, port, fixture, and lifecycle |
+| [07 Data model](docs/07-data-model.md) | CSV, target table, quarantine, and fixture contract |
+| [08 CLI specification](docs/08-api-specification.md) | Exact commands, errors, and JSON counts |
+| [09 Testing strategy and test cases](docs/09-testing-strategy-and-test-cases.md) | 20 distinct tests and traceability |
+| [10 Development and CI quality](docs/10-devops-ci-cd-and-quality.md) | Git, CI, environment, and Definition of Done |
+| [11 Five-day plan](docs/11-milestones-and-deliverables.md) | 30-hour schedule and five-minute demo |
+| [12 Evaluation rubric](docs/12-evaluation-rubric.md) | Fixed 100-point grading |
+| [13 Interview preparation](docs/13-interview-preparation.md) | Ten role-specific questions |
+| [14 Glossary and resources](docs/14-glossary-and-resources.md) | Terms and official learning links |
 
-## Rules for students
+## Learning and integrity
 
-### Individual work
-
-You work alone. You may discuss concepts with classmates, but you must write and understand your own code, tests, ADRs, and demo.
-
-### AI assistant policy
-
-> You MAY use AI assistants (for example GitHub Copilot or ChatGPT) to learn concepts, explain errors, and review your code. You MUST understand every line that you commit. You MUST tell the trainer about significant AI help in the pull request description. You MUST NOT give this specification to an AI tool and submit the generated solution as your own work. In the viva, the trainer asks you to explain and change your code live. If you cannot explain your code, the result is "Rework required".
-
-### How to ask questions
-
-> Open a GitHub Issue in this specification repository. Start the title with `[Question]`. The trainer answers in the issue, so all students can see the answer. If the answer changes the specification, the trainer updates the change log.
-
-### Student repository
-
-> Create a public repository with the name `clinicq-api` in your own GitHub account. Add the trainer (`@sukurcf`) as a collaborator. Do not copy this specification into your repository. Link to it from your README.
-
-### Review model
-
-> Every change goes through a pull request. You MAY merge your own pull request after CI is green and you complete the PR checklist. The trainer reviews at least 2 substantive pull requests from each student every week. The trainer can ask for changes at any time.
-
-### Requirement freeze
-
-> This specification is frozen for the cohort. The trainer can add clarifications. If a change affects grading, the change log states the impact.
-
-### Weekly demos
-
-Every Friday, show a 15-minute progress demo to the trainer. Bring one working feature, one test result, and one question or risk.
+Use assistants to explain concepts or review errors, but understand and verify every submitted change. Follow your trainer’s rules for disclosing assistance. Use only fictional data and keep local credentials out of Git.
 
 ## Change log
 
 | Version | Date | Change |
 |---|---|---|
-| 1.0 | 2026-10-02 | First release |
-| 1.1 | 2026-10-02 | Backend/local-only revision: future frontend and public cloud exercises removed. Their effort and points assess Python/SQL/API tests and reproducible local operation; six weeks, business rules, version families, and rubric weights are unchanged. |
+| 1.0 | 2026-10-02 | Initial specification release. |
+| 1.1 | 2026-10-02 | Local-only, backend-focused revision; the original six-week duration and rubric weights were unchanged at that revision. |
+| 1.2 | 2026-10-13 | Replaces the earlier scope with LoadLite and exactly five days × six hours/day = 30 hours. Grading now measures data quality, idempotent transactional loading, tests, and local reproducibility; earlier scope and optional work do not earn marks. |
